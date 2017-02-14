@@ -10,6 +10,7 @@ const cssClasses = {
   OPEN: `${ROOT}--open`,
   ANIMATING: `${ROOT}--animating`,
   RIGHT: `${ROOT}--right`,
+  OPACITY_VAR_NAME: `--${ROOT}-opacity`,
 };
 
 class Temporary extends Component {
@@ -30,7 +31,11 @@ class Temporary extends Component {
     this.handleMenuToggle = this.handleMenuToggle.bind(this);
     this.handleShadeClick = this.handleShadeClick.bind(this);
     this.handleDrawerRef = this.handleDrawerRef.bind(this);
+    this.handleShadeRef = this.handleShadeRef.bind(this);
     this.handleTransitionEnd = this.handleTransitionEnd.bind(this);
+    this.handleTouchstart = this.handleTouchstart.bind(this);
+    this.handleTouchmove = this.handleTouchmove.bind(this);
+    this.handleTouchend = this.handleTouchend.bind(this);
     this.open = this.open.bind(this);
     this.close = this.close.bind(this);
     this.state = {};
@@ -54,10 +59,59 @@ class Temporary extends Component {
 
   handleDrawerRef(nativeDrawer) {
     this.drawer = nativeDrawer;
+    this.drawer.addEventListener('click', Temporary.handleDrawerClick);
+    this.drawer.addEventListener('touchstart', this.handleTouchstart);
+  }
+
+  handleShadeRef(nativeShade) {
+    this.shade = nativeShade;
+    this.shade.addEventListener('click', this.handleShadeClick);
+    this.shade.addEventListener('touchmove', this.handleTouchmove);
+    this.shade.addEventListener('touchend', this.handleTouchend);
   }
 
   handleShadeClick() {
     this.close();
+  }
+
+  handleTouchstart({ pointerType, touches, pageX }) {
+    if (!this.state.open) {
+      return;
+    }
+
+    if (pointerType && pointerType !== 'touch') {
+      return;
+    }
+
+    this.startX = touches ? touches[0].pageX : pageX;
+    this.touchingSideNav = true;
+    this.drawerWidth = this.drawer.offsetWidth;
+    this.setState({ currentX: this.startX });
+  }
+
+  handleTouchmove({ pointerType, touches, pageX }) {
+    if (pointerType && pointerType !== 'touch') {
+      return;
+    }
+    const currentX = touches ? touches[0].pageX : pageX;
+    this.setState({ currentX });
+  }
+
+  handleTouchend({ pointerType }) {
+    if (pointerType && pointerType !== 'touch') {
+      return;
+    }
+    this.touchingSideNav = false;
+    this.drawer.style.setProperty('transform', null);
+    this.shade.style.setProperty(cssClasses.OPACITY_VAR_NAME, '');
+    const newPosition = Math.min(0, this.state.currentX - this.startX);
+    // Did the user close the drawer by more than 50%?
+    if (Math.abs(newPosition / this.drawerWidth) >= 0.5) {
+      this.close();
+    } else {
+      // Triggering an open here means we'll get a nice animation back to the fully open state.
+      this.open();
+    }
   }
 
   open() {
@@ -74,6 +128,16 @@ class Temporary extends Component {
     this.setState({ animating: false });
   }
 
+  updateDrawer() {
+    if (!this.touchingSideNav) {
+      return;
+    }
+    const newPosition = Math.min(0, this.state.currentX - this.startX);
+    const newOpacity = Math.max(0, 1 + (1 * (newPosition / this.drawerWidth)));
+    this.drawer.style.setProperty('transform', `translateX(${newPosition}px)`);
+    this.shade.style.setProperty(cssClasses.OPACITY_VAR_NAME, newOpacity);
+  }
+
   render() {
     const { className, children, ...otherProps } = this.props;
     const { open, animating } = this.state;
@@ -82,6 +146,8 @@ class Temporary extends Component {
       React.cloneElement(child, { temporary: true }),
     );
 
+    this.updateDrawer();
+
     return (
       <aside
         className={classnames(cssClasses.ROOT, {
@@ -89,11 +155,10 @@ class Temporary extends Component {
           [cssClasses.ANIMATING]: animating,
         }, className)}
         {...otherProps}
-        onClick={this.handleShadeClick}
+        ref={this.handleShadeRef}
       >
         <nav
           className={cssClasses.DRAWER_SELECTOR}
-          onClick={Temporary.handleDrawerClick}
           ref={this.handleDrawerRef}
         >
           { childs }
